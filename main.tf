@@ -3,6 +3,7 @@ provider "azurerm" {
   client_id       = "${var.azure["client_id"]}"
   client_secret   = "${var.azure["client_secret"]}"
   tenant_id       = "${var.azure["tenant_id"]}"
+  use_msi         = true
 }
 
 module "resource_group" {
@@ -25,6 +26,7 @@ module "master" {
   location            = "${var.location}"
   count               = "${var.master_count}"
   resource_group_name = "${var.resource_group_name}"
+  resource_group_id   = "${module.resource_group.resource_group_id}"
   subnet_id           = "${module.network.subnet_id}"
   master_ip           = ""
   azure               = "${var.azure}"

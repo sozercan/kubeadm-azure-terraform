@@ -3,6 +3,7 @@ variable azure {
 }
 
 variable resource_group_name {}
+variable "resource_group_id" {}
 variable count {}
 variable location {}
 variable master_ip {}
@@ -25,58 +26,7 @@ resource "azurerm_availability_set" "availability_set" {
   managed             = true
 }
 
-resource "azurerm_network_interface" "masternic" {
-  name                = "masternic${count.index}"
-  location            = "${var.location}"
-  resource_group_name = "${var.resource_group_name}"
-  count               = "${var.count}"
-
-  ip_configuration {
-    name                                    = "ipconfiguration${count.index}"
-    subnet_id                               = "${var.subnet_id}"
-    private_ip_address_allocation           = "dynamic"
-    load_balancer_backend_address_pools_ids = ["${azurerm_lb_backend_address_pool.backend_pool.*.id}"]
-    load_balancer_inbound_nat_rules_ids     = ["${element(azurerm_lb_nat_rule.ssh.*.id, count.index)}"]
-  }
-}
-
-resource "azurerm_public_ip" "masterpip" {
-  name                         = "masterpip"
-  location                     = "${var.location}"
-  resource_group_name          = "${var.resource_group_name}"
-  public_ip_address_allocation = "Static"
-  domain_name_label            = "${var.resource_group_name}"
-}
-
-resource "azurerm_lb" "masterlb" {
-  name                = "masterlb"
-  location            = "${var.location}"
-  resource_group_name = "${var.resource_group_name}"
-
-  frontend_ip_configuration {
-    name                 = "PublicIPAddress"
-    public_ip_address_id = "${azurerm_public_ip.masterpip.id}"
-  }
-}
-
-resource "azurerm_lb_backend_address_pool" "backend_pool" {
-  resource_group_name = "${var.resource_group_name}"
-  loadbalancer_id     = "${azurerm_lb.masterlb.id}"
-  name                = "BackEndAddressPool"
-}
-
-resource "azurerm_lb_nat_rule" "ssh" {
-  resource_group_name            = "${var.resource_group_name}"
-  count                          = "${var.count}"
-  loadbalancer_id                = "${azurerm_lb.masterlb.id}"
-  name                           = "SSH${count.index}"
-  protocol                       = "Tcp"
-  frontend_port                  = "${22 + count.index}"
-  backend_port                   = 22
-  frontend_ip_configuration_name = "PublicIPAddress"
-}
-
-resource "azurerm_virtual_machine" "mastervm" {
+resource "azurerm_virtual_machine" "virtual_machine" {
   name                  = "master${count.index}"
   count                 = "${var.count}"
   location              = "${var.location}"
@@ -85,27 +35,28 @@ resource "azurerm_virtual_machine" "mastervm" {
   vm_size               = "${var.master_size}"
   availability_set_id   = "${azurerm_availability_set.availability_set.id}"
 
+  # identity {
+  #   type = "systemAssigned"
+  # }
+
   storage_image_reference {
     publisher = "Canonical"
     offer     = "UbuntuServer"
     sku       = "16.04-LTS"
     version   = "latest"
   }
-
   storage_os_disk {
     name              = "master${format("%03d", count.index)}-osdisk"
     caching           = "ReadWrite"
     create_option     = "FromImage"
     managed_disk_type = "Standard_LRS"
   }
-
   os_profile {
     computer_name  = "${var.computer_name}${count.index}"
     admin_username = "${var.admin_username}"
     admin_password = "${var.admin_password}"
     custom_data    = "${data.template_file.cloud-config.rendered}"
   }
-
   os_profile_linux_config {
     disable_password_authentication = true
 
@@ -115,6 +66,37 @@ resource "azurerm_virtual_machine" "mastervm" {
     }
   }
 }
+
+# resource "azurerm_virtual_machine_extension" "virtual_machine_extension" {
+#   name                       = "master${count.index}-msi"
+#   count                      = "${var.count}"
+#   location                   = "${var.location}"
+#   resource_group_name        = "${var.resource_group_name}"
+#   virtual_machine_name       = "${element(azurerm_virtual_machine.virtual_machine.*.name, count.index)}"
+#   auto_upgrade_minor_version = true
+#   publisher                  = "Microsoft.ManagedIdentity"
+#   type                       = "ManagedIdentityExtensionForLinux"
+#   type_handler_version       = "1.0"
+
+#   settings = <<SETTINGS
+#     {
+#         "port": 50342
+#     }
+# SETTINGS
+# }
+
+# data "azurerm_subscription" "subscription" {}
+
+# # Grant the VM identity contributor rights to the current subscription
+# resource "azurerm_role_assignment" "role_assignment" {
+#   scope                = "${var.resource_group_id}"
+#   role_definition_name = "Contributor"
+#   principal_id         = "${lookup(azurerm_virtual_machine.virtual_machine.identity[0], "principal_id")}"
+
+#   lifecycle {
+#     ignore_changes = ["name"]
+#   }
+# }
 
 data "template_file" "cloud-config" {
   template = "${file("${path.root}/bootstrap/bootstrap.sh")}"

@@ -23,6 +23,7 @@ resource "azurerm_virtual_machine_scale_set" "vmss" {
   location            = "${var.location}"
   resource_group_name = "${var.resource_group_name}"
   upgrade_policy_mode = "Manual"
+  overprovision       = false
 
   sku {
     name     = "${var.node_size}"
@@ -69,6 +70,18 @@ resource "azurerm_virtual_machine_scale_set" "vmss" {
       name      = "IPConfiguration"
       subnet_id = "${var.subnet_id}"
     }
+  }
+
+  identity {
+    type = "systemAssigned"
+  }
+
+  extension {
+    name                 = "MSILinuxExtension"
+    publisher            = "Microsoft.ManagedIdentity"
+    type                 = "ManagedIdentityExtensionForLinux"
+    type_handler_version = "1.0"
+    settings             = "{\"port\": 50342}"
   }
 }
 

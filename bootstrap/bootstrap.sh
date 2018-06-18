@@ -40,9 +40,9 @@ cat <<EOF >/etc/kubernetes/cloud-config
 }
 EOF
 
-cat << EOF >/etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+cat << "EOF" >/etc/systemd/system/kubelet.service.d/10-kubeadm.conf
 [Service]
-Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf --node-labels=${node_labels}"
+Environment="KUBELET_KUBECONFIG_ARGS=--bootstrap-kubeconfig=/etc/kubernetes/bootstrap-kubelet.conf --kubeconfig=/etc/kubernetes/kubelet.conf
 Environment="KUBELET_SYSTEM_PODS_ARGS=--pod-manifest-path=/etc/kubernetes/manifests --allow-privileged=true"
 Environment="KUBELET_NETWORK_ARGS=--network-plugin=cni --cni-conf-dir=/etc/cni/net.d --cni-bin-dir=/opt/cni/bin"
 Environment="KUBELET_DNS_ARGS=--cluster-dns=10.96.0.10 --cluster-domain=cluster.local"
@@ -54,23 +54,29 @@ ExecStart=
 ExecStart=/usr/bin/kubelet $KUBELET_KUBECONFIG_ARGS $KUBELET_SYSTEM_PODS_ARGS $KUBELET_NETWORK_ARGS $KUBELET_DNS_ARGS $KUBELET_AUTHZ_ARGS $KUBELET_CADVISOR_ARGS $KUBELET_CERTIFICATE_ARGS $KUBELET_EXTRA_ARGS
 EOF
 
+node_labels="${node_labels}"
+if [ -n "$node_labels" ]; then
+  sed -i "s|KUBELET_KUBECONFIG_ARGS=|KUBELET_KUBECONFIG_ARGS=--node-labels=master |g" \
+    /etc/systemd/system/kubelet.service.d/10-kubeadm.conf
+fi
+
 curl -s https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key add -
 cat <<EOF >/etc/apt/sources.list.d/kubernetes.list
 deb http://apt.kubernetes.io/ kubernetes-xenial main
 EOF
 apt-get update
-apt-get install -y --option=Dpkg::Options::=--force-confold kubelet kubeadm kubectl
+apt-get install -y --option=Dpkg::Options::=--force-confold kubelet=1.10.2-00 kubeadm=1.10.2-00 kubectl=1.10.2-00
 
 if [[ "${node_labels}" == *"role=master"* ]]; then
 
     echo "*** Configuring master ***"
 
     cat << EOF >/etc/kubernetes/azure-cloudprovider.yaml
-    cloudProvider: "azure"
-    kubernetesVersion: v1.10.2
-    token: "${kubeadm_token}"
-    networking:
-      podSubnet: 10.0.2.0/24
+cloudProvider: "azure"
+kubernetesVersion: v1.10.2
+token: "${kubeadm_token}"
+networking:
+    podSubnet: 10.0.2.0/24
 EOF
     # initializing kubeadm
     kubeadm init --config /etc/kubernetes/azure-cloudprovider.yaml
